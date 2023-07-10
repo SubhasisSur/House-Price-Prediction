@@ -1,0 +1,410 @@
+---
+title: "House_Price_Prediction"
+author: "Subhasis Sur"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r}
+house=read.csv("D:/MSTAT_1ST_YEAR/sem_1_isi/D.S/kc_house_data.csv")
+#View(house)
+str(house)
+```
+
+```{r}
+
+
+id=as.integer(runif(500,1,nrow(house)))
+df=house[id,]
+library(leaflet)
+m <- leaflet() %>%
+     addTiles() %>%  # Add default OpenStreetMap map tiles
+     addMarkers(lng= df$long, lat=df$lat)
+#m
+
+```
+
+Data Cleaning
+
+```{r warning=FALSE}
+house=subset(house,select = -c(id,lat,long))
+house$date=as.numeric(substr(house$date,1,4))
+library(lattice)
+library(latticeExtra)
+house$date=as.factor(house$date)
+house$bathrooms=round(house$bathrooms)
+house$floors=round(house$floors)
+house$zipcode=as.factor(substr(as.character(house$zipcode),1,4))
+
+```
+
+clearly sqft_living= sqft_above + sqft_basement
+
+```{r echo=FALSE, warning=FALSE}
+library(rgl)
+with(house,plot3d(sqft_living,sqft_above,sqft_basement,type="s",size=1,col="red"))
+house=subset(house,select = -c(sqft_living))
+renovated=ifelse(house$yr_renovated==0,0,1)
+house=subset(house,select = -c(yr_renovated))
+house$renovated=renovated
+#library(dplyr)
+#rename(house_train,renovated=yr_renovated)
+house$condition=as.factor(house$condition)
+house$grade=as.factor(house$grade)
+house$view=as.factor(house$view)
+house$renovated=as.factor(renovated)
+house$waterfront=as.factor(house$waterfront)
+
+
+str(house)
+
+house=na.omit(house)
+#rowid=c("id","lat","long","sqft_living")
+```
+
+```{r warning=FALSE}
+df1=subset(house,select=-c(date,renovated,condition,grade,view,zipcode,waterfront))
+cor_mat=as.data.frame(cor(df1))
+cor_mat
+```
+
+```{r warning=FALSE}
+library(lattice)
+library(latticeExtra)
+bwplot(price~grade,data=house)
+bwplot(price~condition,data=house)
+xyplot(price~sqft_above,data=house,type=c("p","r","smooth"),col.line="black")
+xyplot(price~sqft_living15,data=house,type=c("p","r","smooth"),col.line="black")
+xyplot(price~sqft_lot,data=house,type=c("p","r","smooth"),col.line="black")
+xyplot(price~sqft_basement,data=house,type=c("p","r","smooth"),col.line="black")
+xyplot(price~floors,data=house)
+xyplot(price~waterfront,data=house)
+xyplot(price~yr_built,data=house,type=c("p","r","smooth"),col.line="black")
+xyplot(price~bathrooms,type=c("p","r","smooth"),data=house,col.line="black")
+xyplot(price~bedrooms,type=c("p","r","smooth"),data=house,col.line="black")
+```
+
+```{r}
+#split=sort(sample(nrow(house),nrow(house)*0.80))
+#house_train=house[split,]
+#house_test=house[-split,]
+library(readxl)
+house_train=read_excel("D:/MSTAT_1ST_YEAR/sem_1_isi/D.S/project/train.xlsx")
+house_test=read_excel("D:/MSTAT_1ST_YEAR/sem_1_isi/D.S/project/test.xlsx")
+```
+
+```{r}
+
+fm1=lm(price~.-price,data=house_train)
+summary(fm1)
+xyplot(hatvalues(fm1)~rstudent(fm1),grid=TRUE)
+ti=rstudent(fm1)
+```
+
+```{r}
+id4=which(hatvalues(fm1) >0.4 | rstudent(fm1)>15)
+id4=(as.data.frame(id4))[,1]
+id=id4
+house_train4=house_train[-id,]
+fm8=lm(price~.-price,data=house_train4)
+summary(fm8)
+
+```
+
+```{r}
+n=nrow(house_train)
+pi = 2 * pt(-abs(ti), df = fm1$df.residual - 1) # p-values
+id1=which(1 - (1-pi)^n < 0.05)
+id1=(as.data.frame(id1))[,1]
+id=id1
+house_train1=house_train[-id,]
+fm2=lm(price~.-price,data=house_train1)
+summary(fm2)
+```
+
+```{r}
+
+n=nrow(house_train)
+y=house_train$price
+e.mean=numeric(n)
+e=residuals(fm1)
+ for (i in 1:n)
+ {
+     d <- house_train[-i, ]
+     e.mean[i]= y[i] - mean(house_train$price,na.rm=TRUE)
+     
+ }
+ t=sum(e.mean^2)
+ s=sum(e^2)
+ 1-(s/t)
+```
+
+```{r}
+cooksd=cooks.distance(fm1)
+id2=which(cooksd>0.2)
+xyplot(cooksd ~ seq_along(cooksd), grid = TRUE) +
+    layer(panel.text(x[id2], y[id2], labels = rownames(house_train)[id2], pos = 4, col = "grey50"))
+id2=(as.data.frame(id2))[,1]
+```
+
+```{r}
+id=id2
+house_train2=house_train[-id,]
+fm3=lm(price~.-price,data=house_train2)
+summary(fm3)
+```
+
+```{r}
+covr = covratio(fm1)
+id3 =which(abs(covr-1) > 0.2)
+xyplot(covr ~ seq_along(covr), grid = TRUE) +
+    layer(panel.text(x[id3], y[id3], labels = rownames(house_train)[id3], pos = 4, col = "grey50"))
+id3=(as.data.frame(id3))[,1]
+```
+
+```{r}
+id=id3
+house_train3=house_train[-id,]
+fm4=lm(price~.-price,data=house_train3)
+summary(fm4)
+```
+
+```{r}
+#dfb=dfbetas(fm1)
+#dfb
+#which(dfb>1)
+```
+
+```{r warning=FALSE}
+library(car)
+densityplot(~rstudent(fm1))
+xyplot(sort(rstudent(fm1)) ~ qt(ppoints(nrow(house_train)), df = fm1$df.residual - 1), grid = TRUE, aspect = "iso",xlab="Theoretical  Quantiles of t")
+e_rstudent=rstudent(fm1)
+ks.test(e_rstudent,pnorm)
+xyplot(abs(residuals(fm1))~fitted(fm1),type=c("p","smooth"),col.line="black",abline = list(h = 0, col = "grey50"))
+qqPlot(e_rstudent,distribution = "t",df=fm1$df.residual - 1)
+```
+
+```{r warning=FALSE}
+library(MASS)
+par(mar = c(5, 8, 1, 2))
+boxcox(fm1, lambda = seq(-0.1, 0.2, 0.01), plotit = TRUE,grid=TRUE)
+histogram(~price,data=house_train)
+```
+
+```{r}
+library(car)
+house_train$price=log(house_train$price)
+fm5=lm(price~.-price,data=house_train)
+densityplot(~rstudent(fm5))
+#xyplot(sort(rstudent(fm5)) ~ qt(ppoints(nrow(house_train)), df = fm5$df.residual - 1), grid = TRUE, aspect = "iso")
+e_rstudent1=rstudent(fm5)
+ks.test(e_rstudent1,pnorm)
+xyplot(sort(rstudent(fm5)) ~ qt(ppoints(nrow(house_train)), df = fm5$df.residual - 1), grid = TRUE, aspect = "iso",xlab="Theorrtical Quantiles") 
+ 
+```
+
+```{r}
+qqPlot(e_rstudent1,distribution = "t",df=fm5$df.residual - 1,xlab="Theoretical Quantiles")  
+#id4=which(abs(e_rstudent1)>3)
+#id=as.data.frame(id4)[,1]
+#house_train4=house_test[-id,]
+#fm=lm(price~.-price,data=house_train4)
+#qqPlot(rstudent(fm),distribution = "t",df=fm$df.residual - 1) 
+```
+
+```{r}
+xyplot(abs(residuals(fm5))~fitted(fm5),type=c("p","smooth"),col.line="black",abline = list(h = 0, col = "grey50"),xlab="fitted(fm2)",ylab="abs(residuals(fm2))")
+library(car)
+ncvTest(fm5)
+```
+
+```{r}
+summary(fm5)
+```
+
+```{r echo=FALSE, warning=FALSE}
+
+predicted=predict(fm5,newdata =house_test,type="response" )
+
+library(reshape2)
+actual=house_test$price
+actual=log(actual)
+data1=data.frame(actual,predicted)
+meltdata=melt(data1)
+library(ggplot2)
+p1=ggplot(data=meltdata,aes(value,fill=variable))+geom_density(alpha=0.6)
+p1
+```
+
+```{r}
+Rfm1=rlm(price~.-price,data=house_train,psi=psi.bisquare,na.action = na.exclude)
+Rfm2=rlm(price~.-price,data=house_train,psi=psi.huber,na.action = na.exclude)
+```
+
+```{r}
+predictedrlm1=predict(Rfm1,newdata =house_test,type="response" )
+datarlm1=data.frame(actual,predictedrlm1)
+meltdatarlm1=melt(datarlm1)
+library(ggplot2)
+p2=ggplot(data=meltdatarlm1,aes(value,fill=variable))+geom_density(alpha=0.6)
+p2
+predictedrlm2=predict(Rfm2,newdata =house_test,type="response" )
+datarlm2=data.frame(actual,predictedrlm2)
+meltdatarlm2=melt(datarlm2)
+library(ggplot2)
+p3=ggplot(data=meltdatarlm2,aes(value,fill=variable))+geom_density(alpha=0.6)
+p3
+```
+
+```{r}
+x=model.matrix(~.-price-1,house_train)
+y=house_train$price
+library(glmnet)
+cv.lasso <- cv.glmnet(x, y, alpha = 1, nfold=100)
+plot(cv.lasso)
+fm.lasso=glmnet(x,y,alpha=1)
+plot(fm.lasso, xvar = "lambda", label = TRUE)
+plot(fm.lasso, xvar = "dev", label = TRUE)
+s.cv1 = c(lambda.min1= cv.lasso$lambda.1se, lambda.1se1 = cv.lasso$lambda.min)
+s.cv1
+
+```
+
+```{r}
+Coef1=round(coef(cv.lasso, s = cv.lasso$lambda.1se), 3)
+Coef1
+str1=rownames(Coef1)[Coef1[,1]!=0]
+str1=str1[-1]
+str1=str1[-13]
+df2=x[,str1]
+df2=as.data.frame(df2)
+df2$price=y
+```
+
+```{r}
+cv.ridge <- cv.glmnet(x, y, alpha =0 , nfolds = 100)
+plot(cv.ridge)
+fm.ridge=glmnet(x,y,alpha=0)
+plot(fm.ridge, xvar = "lambda", label = TRUE)
+plot(fm.ridge, xvar = "dev", label = TRUE)
+s.cv2= c(lambda.min2 = cv.ridge$lambda.min, lambda.1se2 = cv.ridge$lambda.1se)
+s.cv2
+```
+
+```{r}
+Coef2=round(coef(cv.ridge, s = cv.ridge$lambda.1se), 3)
+Coef2
+str2=rownames(Coef2)[Coef2[,1]!=0]
+str2=str2[-1]
+df3=x[,str2]
+df3=as.data.frame(df3)
+df3$price=y
+```
+
+```{r}
+#lasso
+fm6=lm(price~.-price,data=df2,)
+summary(fm6)
+```
+
+```{r}
+#lasso
+x1=model.matrix(~.-price-1,house_test)
+df4=x1[,str1]
+df4=as.data.frame(df4)
+pre=predict(fm6,newdata = df4,type="response")
+df5=cbind.data.frame(pre,actual)
+df5
+qqPlot(rstudent(fm6),distribution = "t",df=fm6$df.residual-1)
+xyplot(abs(residuals(fm6))~fitted(fm6),type=c("p","smooth"),col.line="black",abline = list(h = 0, col = "grey50"),ylab = "residuals(lasso)",xlab="fitted(lasso)")
+```
+
+```{r}
+library(reshape2)
+meltdatalasso=melt(df5)
+library(ggplot2)
+p2=ggplot(data=meltdatalasso,aes(value,fill=variable))+geom_density(alpha=0.6)
+p2
+```
+
+```{r}
+n=nrow(df2)
+y=df2$price
+e.mean=numeric(n)
+e=residuals(fm6)
+ for (i in 1:n)
+ {
+     d <- df2[-i, ]
+     e.mean[i]= y[i] - mean(df2$price,na.rm=TRUE)
+     
+ }
+ t=sum(e.mean^2)
+ s=sum(e^2)
+ 1-(s/t)
+```
+```{r}
+cor(actual,predicted)
+cor(actual,predictedrlm1)
+cor(actual,predictedrlm2)
+cor(actual,predicted)
+```
+
+
+```{r}
+##ridge
+#fm7=lm(price~.-price,data=df3)
+#summary(fm7)
+```
+
+```{r}
+#ridge
+#df3=subset(df3,select=-c(date2015))
+#fm7=lm(price~.-price,data=df3,)
+#summary(fm7)
+```
+
+```{r}
+#ridge
+#df7=x1[,str2]
+#df7=as.data.frame(df7)
+#pre2=predict(fm7,newdata = df7,type="response")
+#pre2=exp(pre2)
+#df8=cbind.data.frame(pre2,actual)
+#df8
+```
+
+```{r warning=FALSE}
+#library(leaps)
+#reg.sub <- regsubsets(price ~.-price,
+ #                    data = house_train, nbest = 1, nvmax = 10)
+#t(summary(reg.sub)$outmat)
+#str(ssub <- summary(reg.sub))
+```
+
+```{r}
+#ssub <- within.list(ssub,
+#{
+# p <- rowSums(which) + 1 # add 1 for intercept
+#  BIC <- obj$nn * log(rss) + log(obj$nn) * p
+# aic <- bic - log(obj$nn) * p + 2 * p
+#})
+#summary(with(ssub, (BIC - bic)))
+#xyplot(scale(aic) + scale(bic) + scale(cp) ~ seq_along(bic), data = ssub, grid = TRUE, type = "o",
+#       par.settings = simpleTheme(pch = 16), auto.key = #list(space = "right"))
+#with(ssub, {
+#    o <- order(bic); w <- which; is.na(w) <- (w == FALSE); wbic #<- w * bic
+#    levelplot(wbic[o, ], xlim = as.character(round(bic))[o], #xlab = NULL, ylab = NULL,
+#              scales = list(x = list(rot = 90)), main = "Models #ordered by BIC")
+
+#})
+#with(ssub, {
+#    o <- order(cp); w <- which; is.na(w) <- (w == FALSE); wcp <- #w * cp
+#    levelplot(wcp[o, ], xlim = as.character(round(cp))[o], xlab #= NULL, ylab = NULL,
+#              scales = list(x = list(rot = 90)), main = "Models #ordered by Cp")
+#})
+
+```
+
